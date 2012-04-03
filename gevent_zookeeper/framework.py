@@ -31,6 +31,26 @@ ZOO_OPEN_ACL_UNSAFE = {
 }
 
 
+class DeleteBuilder(object):
+    """Builder for C{delete} of C{ZookeeperFramework}."""
+
+    def __init__(self, client):
+        self.client = client
+        self.ignore_errors = None
+
+    def ignoring_errors(self):
+        self.ignore_errors = True
+        return self
+
+    def for_path(self, path):
+        path = self.client._adjust_path(path)
+        try:
+            self.client.client.delete(path)
+        except zookeeper.NoNodeException:
+            if not self.ignore_errors:
+                raise
+
+
 class GetBuilder(object):
     """Builder for C{get} of C{ZookeeperFramework}."""
 
@@ -87,15 +107,17 @@ class MonitorBuilder(object):
         self.listener = listener
         return self
 
-    def store_into(self, target, factory):
+    def store_into(self, target, factory, *args):
         self.item_store = target
         self.item_factory = factory
+        self.factory_args = args
         return self
 
     def for_path(self, path):
         path = self.client._adjust_path(path)
         monitor = self.monitor_factory(self.client.client, path,
-            self.item_store, self.item_factory, self.listener)
+            self.item_store, self.item_factory, self.factory_args,
+            self.listener)
         monitor.start()
         return monitor
 
@@ -139,6 +161,31 @@ class CreateBuilder(object):
                                          self.acl, self.flags)
 
 
+class SetBuilder(CreateBuilder):
+    """Builder for C{set} of C{ZookeeperFramework}."""
+
+    def __init__(self, client):
+        CreateBuilder.__init__(self, client)
+        self.create = False
+
+    def create_if_needed(self):
+        self.create = True
+        return self
+
+    def for_path(self, path):
+        """Execute the path."""
+        path = self.client._adjust_path(path)
+        if self.create_parents:
+            self.client.create_parents(path, acl=self.acl)
+        try:
+            self.client.client.set(path, self.data)
+        except zookeeper.NoNodeException:
+            if not self.create:
+                raise
+            self.client.client.create(path, self.data,
+                self.acl, self.flags)
+
+
 class ZookeeperFramework(object):
     """High-level framework for talking to a zookeeper cluster.
 
@@ -172,6 +219,41 @@ class ZookeeperFramework(object):
             timeout given to C{ZookeeperFramework} will be used.
         """
         return self.client.connect(timeout)
+
+    def close(self):
+        self.client.close()
+
+    def set(self):
+        """Set content of a node.
+
+        Returns a builder that has to be terminated with a C{for_path}
+        call.
+
+        Use the C{with_data} method of the builder to set the data new
+        node:
+
+             >>> framework.set().with_data('x').for_path('/node')
+
+        It is also possible to create the node if it does not exist
+        using the C{create_if_needed} method.  The builder accepts the
+        same methods as the builder for C{create} when it comes to
+        specifying flags.
+        """
+        return SetBuilder(self)
+
+    def delete(self):
+        """Delete a node.
+
+        Returns a builder that has to be terminated with a C{for_path}
+        call.
+
+        It is possible to have the framework consume I{no node} errors
+        using the C{ignoring_errors} method:
+
+            >>> framework.delete().ignoring_errors().for_path('/xxx')
+
+        """
+        return DeleteBuilder(self)
 
     def create(self):
         """Create a node.

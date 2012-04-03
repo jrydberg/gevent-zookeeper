@@ -394,3 +394,20 @@ class ZookeeperClient(object):
     def exists(self, path, watcher=None):
         """."""
         return self.exists_async(path, watcher).get()
+
+    def delete_async(self, path, version=-1):
+        async_result = self._new_async_result()
+
+        def callback(handle, code):
+            if code != zookeeper.OK:
+                exc = err_to_exception(code)
+                async_result.set_exception(exc)
+            else:
+                async_result.set(code)
+
+        zookeeper.adelete(self._handle, path, version, callback)
+        return async_result
+
+    def delete(self, path, version=-1):
+        """."""
+        return self.delete_async(path, version).get()
