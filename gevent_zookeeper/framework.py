@@ -17,7 +17,8 @@ import os.path
 import zookeeper
 
 from gevent_zookeeper.client import ZookeeperClient
-from gevent_zookeeper.monitor import DataMonitor, ChildrenMonitor
+from gevent_zookeeper.monitor import (DataMonitor, ChildrenMonitor,
+                                      CallbackMonitorListener)
 
 
 __all__ = ['ZookeeperFramework']
@@ -105,6 +106,11 @@ class MonitorBuilder(object):
 
     def using(self, listener):
         self.listener = listener
+        return self
+
+    def notifying(self, callback, *args, **kwargs):
+        self.listener = CallbackMonitorListener(callback,
+            args, kwargs)
         return self
 
     def store_into(self, target, factory, *args):

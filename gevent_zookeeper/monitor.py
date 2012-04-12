@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os.path
+import zookeeper
 
 from gevent.event import AsyncResult
 from gevent.queue import Queue
@@ -30,6 +31,20 @@ class MonitorListener:
 
     def deleted(self, path):
         pass
+
+    def commit(self):
+        pass
+
+
+class CallbackMonitorListener(MonitorListener):
+
+    def __init__(self, callback, args, kwargs):
+        self.callback = callback
+        self.args = args
+        self.kwargs = kwargs
+
+    def commit(self):
+        self.callback(*self.args, **self.kwargs)
 
 
 class DataMonitor(object):
@@ -70,12 +85,13 @@ class ChildrenMonitor(object):
     """
     _STOP_REQUEST = object()
 
-    def __init__(self, client, path, into, factory, listener):
+    def __init__(self, client, path, into, factory, args, listener):
         self.client = client
         self.path = path
         self.into = into if into is not None else {}
         self.factory = factory if factory is not None else str
-        self.listener = listener
+        self.args = args
+        self.listener = listener or MonitorListener()
         self.started = AsyncResult()
         self.queue = Queue()
         self.stats = {}
@@ -88,31 +104,37 @@ class ChildrenMonitor(object):
         while True:
             try:
                 children = self.client.get_children(self.path, watcher)
+            except zookeeper.NoNodeException:
+                if not self.started.ready():
+                    self.started.set(None)
+                gevent.sleep(1)
+                continue
             except Exception, err:
                 if not self.started.ready():
                     self.started.set_exception(err)
                     break
-            else:
-                if not self.started.ready():
-                    self.started.set(None)
 
             for child in children:
                 if not child in self.stats:
                     data, stat = self.client.get(os.path.join(self.path, child))
-                    self.into[child] = self.factory(data)
-                    if self.listener:
-                        self.listener.created(child, self.into[child])
+                    self.into[child] = self.factory(data, *self.args)
+                    self.listener.created(child, self.into[child])
                     self.stats[child] = stat
                 else:
                     data, stat = self.client.get(os.path.join(self.path, child))
                     if stat['version'] != self.stats[child]['version']:
-                        self.into[child] = self.factory(data)
+                        self.into[child] = self.factory(data, *self.args)
                         self.listener.modified(child, self.into[child])
                     self.stats[child] = stat
             for child in self.into.keys():
                 if child not in children:
                     del self.into[child]
                     self.listener.deleted(child)
+
+            if not self.started.ready():
+                self.started.set(None)
+
+            self.listener.commit()
 
             event = self.queue.get()
             if event is self._STOP_REQUEST:

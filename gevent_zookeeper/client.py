@@ -232,13 +232,16 @@ class ZookeeperClient(object):
 
         return callback, greenlet
 
+    def _cleanup_watcher(self, greenlet):
+        greenlet.kill()
+
     @property
     def connected(self):
         """True if connected to the zookeeper cluster."""
         return self._connected
 
     def _session_watcher(self, handle, type, state, path):
-        print "session watcher", handle, type, state, path
+        #print "session watcher", handle, type, state, path
 
         event = ClientEvent(type, state, path)
 
