@@ -20,6 +20,56 @@ from gevent.queue import Queue
 import gevent
 
 
+class DataMonitor(object):
+    _STOP_REQUEST = object()
+
+    def __init__(self, client, path, callback, args, kwargs):
+        self.client = client
+        self.path = path
+        self.callback = callback
+        self.args = args
+        self.kwargs = kwargs
+        self.started = AsyncResult()
+        self.queue = Queue()
+
+    def _monitor(self):
+        """Run the monitoring loop."""
+        def watcher(event):
+            self.queue.put(event)
+
+        while True:
+            try:
+                data, stat = self.client.get(self.path, watcher)
+            except zookeeper.NoNodeException:
+                if not self.started.ready():
+                    self.started.set(None)
+                gevent.sleep(1)
+                continue
+            except Exception, err:
+                if not self.started.ready():
+                    self.started.set_exception(err)
+                    break
+                
+            self.callback(data, *self.args, **self.kwargs)
+
+            if not self.started.ready():
+                self.started.set(None)
+
+            event = self.queue.get()
+            if event is self._STOP_REQUEST:
+                break
+
+    def start(self):
+        """Start monitoring."""
+        self.greenlet = gevent.spawn(self._monitor)
+        return self.started.get()
+
+    def close(self):
+        """Stop the monitor."""
+        self.queue.put(self._STOP_REQUEST)
+        self.greenlet.join()
+
+
 class MonitorListener:
     """Abstract base class for monitor listeners."""
 
@@ -45,38 +95,6 @@ class CallbackMonitorListener(MonitorListener):
 
     def commit(self):
         self.callback(*self.args, **self.kwargs)
-
-
-class DataMonitor(object):
-    """Functionality for monitoring a single node about changes."""
-
-    def __init__(self, client, path, listener):
-        self.client = client
-        self.listener = listener
-        self.greenlet = None
-        self.path = path
-        self.queue = Queue()
-
-    def _monitor(self):
-        """."""
-        def watcher(event):
-            self.queue.put(event)
-
-        first = False
-        while True:
-            try:
-                data, stat = self.client.get(self.path, watcher)
-            except zookeeper.NoNodeException:
-                pass
-            print "GOT EVENT", self.queue.get()
-
-
-    def start(self):
-        """."""
-        self.greenlet = gevent.spawn(self._monitor)
-
-    def close(self):
-        """Stop the monitor."""
 
 
 class ChildrenMonitor(object):

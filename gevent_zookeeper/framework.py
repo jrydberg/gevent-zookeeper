@@ -85,8 +85,31 @@ class GetChildrenBuilder(object):
         return self.client.client.get_children(path, watcher=self.watcher)
 
 
-class MonitorBuilder(object):
-    """Builder for C{monitor} of C{ZookeeperFramework}."""
+class DataMonitorBuilder(object):
+    """Builder for monitoring of data."""
+
+    def __init__(self, client):
+        self.client = client
+        self.callback = None
+        self.args = None
+        self.kwargs = None
+
+    def using(self, fn, *args, **kwargs):
+        self.callback = fn
+        self.args = args
+        self.kwargs = kwargs
+        return self
+
+    def for_path(self, path):
+        path = self.client._adjust_path(path)
+        monitor = DataMonitor(self.client.client, path,
+            self.callback, self.args, self.kwargs)
+        monitor.start()
+        return monitor
+
+
+class ChildrenMonitorBuilder(object):
+    """Child monitor builder."""
 
     def __init__(self, client):
         self.client = client
@@ -95,14 +118,7 @@ class MonitorBuilder(object):
         self.into = None
         self.item_store = {}
         self.item_factory = None
-
-    def content(self):
-        self.monitor_factory = DataMonitor
-        return self
-
-    def children(self):
         self.monitor_factory = ChildrenMonitor
-        return self
 
     def using(self, listener):
         self.listener = listener
@@ -126,6 +142,19 @@ class MonitorBuilder(object):
             self.listener)
         monitor.start()
         return monitor
+
+
+class MonitorBuilder(object):
+    """Builder for C{monitor}."""
+
+    def __init__(self, client):
+        self.client = client
+
+    def data(self):
+        return DataMonitorBuilder(self.client)
+
+    def children(self):
+        return ChildrenMonitorBuilder(self.client)
 
 
 class CreateBuilder(object):
