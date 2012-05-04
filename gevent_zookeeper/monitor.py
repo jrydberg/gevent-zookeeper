@@ -147,6 +147,7 @@ class ChildrenMonitor(object):
             for child in self.into.keys():
                 if child not in children:
                     del self.into[child]
+                    del self.stats[child]
                     self.listener.deleted(child)
 
             if not self.started.ready():
