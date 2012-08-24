@@ -163,16 +163,27 @@ class ChildrenMonitor(object):
 
             for child in children:
                 if not child in self.stats:
-                    data, stat = self.client.get(os.path.join(self.path, child))
-                    self.into[child] = self.factory(data, *self.args)
-                    self.listener.created(child, self.into[child])
-                    self.stats[child] = stat
-                else:
-                    data, stat = self.client.get(os.path.join(self.path, child))
-                    if stat['version'] != self.stats[child]['version']:
+                    try:
+                        data, stat = self.client.get(os.path.join(self.path, child))
+                    except zookeeper.NoNodeException:
+                        print "race condition while getting", os.path.join(
+                            self.path, child)
+                    else:
                         self.into[child] = self.factory(data, *self.args)
-                        self.listener.modified(child, self.into[child])
-                    self.stats[child] = stat
+                        self.listener.created(child, self.into[child])
+                        self.stats[child] = stat
+                else:
+                    try:
+                        data, stat = self.client.get(os.path.join(self.path, child))
+                    except zookeeper.NoNodeException:
+                        print "race condition while getting", os.path.join(
+                            self.path, child)
+                        # should we remove it here?
+                    else:
+                        if stat['version'] != self.stats[child]['version']:
+                            self.into[child] = self.factory(data, *self.args)
+                            self.listener.modified(child, self.into[child])
+                        self.stats[child] = stat
             for child in self.into.keys():
                 if child not in children:
                     del self.into[child]
