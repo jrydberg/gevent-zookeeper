@@ -14,6 +14,9 @@
 
 import os.path
 import zookeeper
+import logging
+import random
+
 
 from gevent.event import AsyncResult
 from gevent.queue import Queue
@@ -31,6 +34,8 @@ class DataMonitor(object):
         self.kwargs = kwargs
         self.started = AsyncResult()
         self.queue = Queue()
+        self._delay = 1.343
+        self.max_delay = 180
 
     def _monitor(self):
         """Run the monitoring loop."""
@@ -45,10 +50,21 @@ class DataMonitor(object):
                     self.started.set(None)
                 gevent.sleep(1)
                 continue
+            except (zookeeper.ConnectionLossException), err:
+                if not self.started.ready():
+                    self.started.set_exception(err)
+                    break
+                logging.error("got %r while monitoring %s", str(err),
+                              self.path)
+                gevent.sleep(self._delay)
+                self._delay += self._delay * random.random()
+                self._delay = min(self._delay, self.max_delay)
+                continue
             except Exception, err:
                 if not self.started.ready():
                     self.started.set_exception(err)
                     break
+                raise
                 
             self.callback(data, *self.args, **self.kwargs)
 
@@ -113,6 +129,8 @@ class ChildrenMonitor(object):
         self.started = AsyncResult()
         self.queue = Queue()
         self.stats = {}
+        self._delay = 1.343
+        self.max_delay = 180
 
     def _monitor(self):
         """Run the monitoring loop."""
@@ -127,10 +145,21 @@ class ChildrenMonitor(object):
                     self.started.set(None)
                 gevent.sleep(1)
                 continue
+            except (zookeeper.ConnectionLossException), err:
+                if not self.started.ready():
+                    self.started.set_exception(err)
+                    break
+                logging.error("got %r while monitoring %s", str(err),
+                              self.path)
+                gevent.sleep(self._delay)
+                self._delay += self._delay * random.random()
+                self._delay = min(self._delay, self.max_delay)
+                continue
             except Exception, err:
                 if not self.started.ready():
                     self.started.set_exception(err)
                     break
+                raise
 
             for child in children:
                 if not child in self.stats:
