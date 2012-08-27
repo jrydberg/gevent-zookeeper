@@ -278,9 +278,12 @@ class ZookeeperClient(object):
         @param timeout: Seconds to wait before timing out.  If not
             specified the default timeout for the client will be used.
         """
+        timeout = timeout if timeout is not None else self._timeout
+        timeout = int(timeout * 1000)
+
         #TODO connect timeout? async version?
         self._handle = zookeeper.init(self._hosts, self._session_watcher,
-            timeout if timeout is not None else self._timeout)
+            timeout)
         self._connected_async_result.wait()
 
     def close(self):
